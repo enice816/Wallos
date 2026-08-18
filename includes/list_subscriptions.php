@@ -79,10 +79,14 @@ function isPaidThisCycle($paidAt, $cycle, $frequency, $nextPayment)
     }
 
     if ($currentDate > $nextPaymentDate) {
-        // Overdue: the cycle window runs forward from next_payment
+        // Overdue: accept paid_at from one cycle before through one cycle
+        // after next_payment, not just on/after it, so an early payment
+        // doesn't stop counting once the due date itself passes.
         $cycleEnd = clone $nextPaymentDate;
         $cycleEnd->modify('+' . $paymentCycleDays . ' days');
-        return $paidDate >= $nextPaymentDate && $paidDate <= $cycleEnd;
+        $cycleStart = clone $nextPaymentDate;
+        $cycleStart->modify('-' . $paymentCycleDays . ' days');
+        return $paidDate >= $cycleStart && $paidDate <= $cycleEnd;
     }
 
     // Normal: walk back from next_payment to find the cycle containing today
@@ -302,6 +306,12 @@ function printSubscriptions($subscriptions, $sort, $categories, $members, $i18n,
             }
             if (!empty($subscription['paid_this_cycle'])) {
                 $subscriptionExtraClasses .= " paid";
+            } elseif (!$subscription['one_time'] && isset($subscription['days_until_due'])) {
+                if ($subscription['days_until_due'] <= 3) {
+                    $subscriptionExtraClasses .= " due-urgent";
+                } elseif ($subscription['days_until_due'] <= 10) {
+                    $subscriptionExtraClasses .= " due-soon";
+                }
             }
 
             $hasLogo = false;

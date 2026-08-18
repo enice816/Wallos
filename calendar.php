@@ -1,6 +1,52 @@
 <?php
 require_once 'includes/header.php';
 
+function getPaymentCycleDays($cycle, $frequency)
+{
+  switch ($cycle) {
+    case 1: return 1 * $frequency;
+    case 2: return 7 * $frequency;
+    case 3: return 30 * $frequency;
+    case 4: return 365 * $frequency;
+    default: return 0;
+  }
+}
+
+function isPaidThisCycle($paidAt, $cycle, $frequency, $nextPayment)
+{
+  if (!$paidAt || $cycle === 5) {
+    return false;
+  }
+
+  $paidDate = new DateTime($paidAt);
+  $nextPaymentDate = new DateTime($nextPayment);
+  $currentDate = new DateTime((new DateTime('now'))->format('Y-m-d'));
+  $paymentCycleDays = getPaymentCycleDays($cycle, $frequency);
+
+  if ($paymentCycleDays <= 0) {
+    return false;
+  }
+
+  if ($currentDate > $nextPaymentDate) {
+    // Overdue: accept paid_at from one cycle before through one cycle after
+    // next_payment — not just on/after it — so an early payment (made a
+    // few days before the due date) doesn't stop counting the moment the
+    // due date itself passes.
+    $cycleEnd = clone $nextPaymentDate;
+    $cycleEnd->modify('+' . $paymentCycleDays . ' days');
+    $cycleStart = clone $nextPaymentDate;
+    $cycleStart->modify('-' . $paymentCycleDays . ' days');
+    return $paidDate >= $cycleStart && $paidDate <= $cycleEnd;
+  }
+
+  // Normal: walk back from next_payment to find the cycle containing today
+  $daysUntilNextPayment = $currentDate->diff($nextPaymentDate)->days;
+  $cyclesBack = max(1, (int) ceil($daysUntilNextPayment / $paymentCycleDays));
+  $cycleStart = clone $nextPaymentDate;
+  $cycleStart->modify('-' . ($cyclesBack * $paymentCycleDays) . ' days');
+  return $paidDate >= $cycleStart && $paidDate <= $nextPaymentDate;
+}
+
 function getPriceConverted($price, $currency, $database, $userId)
 {
   $query = "SELECT rate FROM currencies WHERE id = :currency AND user_id = :userId";
@@ -277,8 +323,37 @@ if ($weekStartsSunday) {
               <?php if (!empty($paymentsByDay[$day])) { ?>
                 <div class="calendar-cell-content">
                   <?php foreach ($paymentsByDay[$day] as $payment) { ?>
-                    <div class="calendar-event" onClick="showSubscriptionDetails(event, <?= $payment['id'] ?>)"
-                      title="<?= htmlspecialchars($payment['name']) ?>">
+                    <?php
+                      $eventTimestamp = strtotime(sprintf('%04d-%02d-%02d', $calendarYear, $calendarMonth, $day));
+                      $daysUntilDue = (int) round(($eventTimestamp - $today) / 86400);
+
+                      // paid_at, and "urgency", only ever describe the ONE live cycle
+                      // Wallos is currently tracking (subscription's stored next_payment).
+                      // Every other rendered occurrence is just a projection of past or
+                      // further-future recurrences and shouldn't be colored at all.
+                      $isActualNextPayment = date('Y-m-d', strtotime($payment['next_payment'])) === date('Y-m-d', $eventTimestamp);
+
+                      $urgencyClass = '';
+                      $urgencyLabel = '';
+
+                      if ($isActualNextPayment) {
+                        $eventIsPaid = isPaidThisCycle($payment['paid_at'] ?? null, $payment['cycle'], $payment['frequency'], $payment['next_payment']);
+
+                        if ($eventIsPaid) {
+                          $urgencyClass = 'paid';
+                          $urgencyLabel = ' (' . translate('paid', $i18n) . ')';
+                        } elseif ($daysUntilDue <= 3) {
+                          $urgencyClass = 'due-urgent';
+                        } elseif ($daysUntilDue <= 10) {
+                          $urgencyClass = 'due-soon';
+                        }
+                      } elseif ($eventTimestamp < $today) {
+                        $urgencyClass = 'past';
+                      }
+                    ?>
+
+                    <div class="calendar-event<?= $urgencyClass ? ' ' . $urgencyClass : '' ?>" onClick="showSubscriptionDetails(event, <?= $payment['id'] ?>)"
+                      title="<?= htmlspecialchars($payment['name']) . $urgencyLabel ?>">
                       <?= htmlspecialchars($payment['name']) ?>
                     </div>
                   <?php } ?>

@@ -36,6 +36,35 @@ $updateStmt->bindValue(':id', $subscriptionId, SQLITE3_INTEGER);
 $updateStmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 
 if ($updateStmt->execute()) {
+    // Optional: notify an external service (e.g. Home Assistant) whenever
+    // a subscription is marked paid. Set WALLOS_MARK_PAID_WEBHOOK_URL as a
+    // container environment variable to enable; left unset, this is a
+    // no-op. Never allowed to block or fail the actual mark-paid action.
+    $markPaidWebhookUrl = getenv('WALLOS_MARK_PAID_WEBHOOK_URL');
+    if (!empty($markPaidWebhookUrl)) {
+        $webhookPayload = json_encode([
+            "event" => "wallos_mark_paid",
+            "id" => $subscriptionId,
+            "name" => $subscription['name'],
+            "date" => $subscription['next_payment'],
+            "paid_at" => $currentDate
+        ]);
+
+        $ch = curl_init($markPaidWebhookUrl);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $webhookPayload);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+        $webhookResponse = curl_exec($ch);
+        $webhookHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $webhookError = curl_error($ch);
+        curl_close($ch);
+
+        $webhookLogLine = date('Y-m-d H:i:s') . " | mark_paid webhook -> $markPaidWebhookUrl | payload: $webhookPayload | http_code: $webhookHttpCode | response: $webhookResponse | curl_error: $webhookError\n";
+        file_put_contents('/var/www/html/db/mark_paid_webhook.log', $webhookLogLine, FILE_APPEND | LOCK_EX);
+    }
+
     echo json_encode([
         "success" => true,
         "message" => translate('success', $i18n),

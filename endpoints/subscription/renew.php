@@ -53,8 +53,11 @@ while ($nextPaymentDate < $currentDate || $nextPaymentDate == new DateTime($subs
     $nextPaymentDate->add($interval);
 }
 
-// Update the subscription's next_payment date
-$updateQuery = "UPDATE subscriptions SET next_payment = :nextPaymentDate WHERE id = :subscriptionId";
+// Update the subscription's next_payment date and clear paid_at, since a
+// renewal always starts a fresh (unpaid) cycle regardless of whether the
+// old paid_at timestamp would otherwise still fall inside the recalculated
+// isPaidThisCycle() window.
+$updateQuery = "UPDATE subscriptions SET next_payment = :nextPaymentDate, paid_at = NULL WHERE id = :subscriptionId";
 $updateStmt = $db->prepare($updateQuery);
 $updateStmt->bindValue(':nextPaymentDate', $nextPaymentDate->format('Y-m-d'));
 $updateStmt->bindValue(':subscriptionId', $subscriptionId);

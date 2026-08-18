@@ -76,8 +76,13 @@ mkdir -p /var/www/html/images/uploads/logos/avatars
 chmod -R 755 /var/www/html/images/uploads/logos
 chown -R www-data:www-data /var/www/html/images/uploads/logos
 
-# Remove crontab for the user
-crontab -d -u root
+# NOTE: upstream had "crontab -d -u root" here, which deletes root's
+# crontab shortly after crond starts. Depending on how dcron watches the
+# spool directory, this silently disables every cron job scheduled less
+# often than the polling interval catches it before deletion (confirmed:
+# only the every-2-minute jobs ever produced log output; every daily/
+# weekly job — including sendnotifications.php and updatenextpayment.php —
+# never fired). Removed so the crontab installed at build time stays intact.
 
 # Run updatenextpayment.php and wait for it to finish
 /usr/local/bin/php /var/www/html/endpoints/cronjobs/updatenextpayment.php

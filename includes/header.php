@@ -1,4 +1,28 @@
 <?php
+// PHP-FPM's default clear_env=yes strips container environment variables
+// (like TZ) from worker processes, so getenv('TZ') here is often empty
+// even though `docker exec ... printenv TZ` shows it fine at the shell
+// level. Falling through to PHP's compiled default then typically lands
+// on UTC too. Since this file is included by every web-facing page
+// (calendar.php, index.php, subscriptions.php, etc.) but nothing here
+// previously called date_default_timezone_set() at all, every "today"
+// calculation on those pages has been running on UTC regardless of the
+// TZ env var — hence day-rollover-dependent behavior (paid/overdue
+// status, calendar coloring) flipping at 8pm Eastern (= midnight UTC)
+// instead of local midnight.
+//
+// EDIT THIS if you move to a different timezone.
+$WALLOS_FALLBACK_TIMEZONE = 'America/New_York';
+
+$wallosTimezone = getenv('TZ');
+if ($wallosTimezone == '') {
+    $wallosTimezone = date_default_timezone_get();
+    if ($wallosTimezone == '' || $wallosTimezone == 'UTC') {
+        $wallosTimezone = $WALLOS_FALLBACK_TIMEZONE;
+    }
+}
+date_default_timezone_set($wallosTimezone);
+
 require_once 'connect.php';
 require_once 'checkuser.php';
 require_once 'checksession.php';

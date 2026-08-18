@@ -100,9 +100,14 @@ function isPaidThisCycle($paidAt, $cycle, $frequency, $nextPayment)
     }
 
     if ($currentDate > $nextPaymentDate) {
+        // Overdue: accept paid_at from one cycle before through one cycle
+        // after next_payment, not just on/after it, so an early payment
+        // doesn't stop counting once the due date itself passes.
         $cycleEnd = clone $nextPaymentDate;
         $cycleEnd->modify('+' . $paymentCycleDays . ' days');
-        return $paidDate >= $nextPaymentDate && $paidDate <= $cycleEnd;
+        $cycleStart = clone $nextPaymentDate;
+        $cycleStart->modify('-' . $paymentCycleDays . ' days');
+        return $paidDate >= $cycleStart && $paidDate <= $cycleEnd;
     }
 
     $daysUntilNextPayment = $currentDate->diff($nextPaymentDate)->days;
@@ -122,7 +127,7 @@ $upcomingSubscriptions = [];
 while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
     if (!isPaidThisCycle($row['paid_at'] ?? null, $row['cycle'], $row['frequency'], $row['next_payment'])) {
         $upcomingSubscriptions[] = $row;
-        if (count($upcomingSubscriptions) >= 3) break;
+        if (count($upcomingSubscriptions) >= 5) break;
     }
 }
 
@@ -199,7 +204,7 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                         $subscriptionDisplayPrice = formatPrice($subscriptionPrice, $currencies[$subscriptionCurrency]['code'], $currencies);
 
                         ?>
-                        <div class="subscription-item" onClick="showSubscriptionDetails(event, <?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>">
+                        <div class="subscription-item due-urgent" onClick="showSubscriptionDetails(event, <?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>">
                             <?php
                             if (empty($subscription['logo'])) {
                                 ?>
@@ -245,8 +250,11 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                         $subscriptionDisplayNextPayment = formatDate($subscriptionNextPayment, $lang);
                         $subscriptionDisplayPrice = formatPrice($subscriptionPrice, $currencies[$subscriptionCurrency]['code'], $currencies);
 
+                        $daysUntilDue = (int) round((strtotime($subscription['next_payment']) - strtotime(date('Y-m-d'))) / 86400);
+                        $itemUrgencyClass = $daysUntilDue <= 3 ? ' due-urgent' : ($daysUntilDue <= 10 ? ' due-soon' : '');
+
                         ?>
-                        <div class="subscription-item" onClick="showSubscriptionDetails(event, <?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>">
+                        <div class="subscription-item<?= $itemUrgencyClass ?>" onClick="showSubscriptionDetails(event, <?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>">
                             <?php
                             if (empty($subscription['logo'])) {
                                 ?>

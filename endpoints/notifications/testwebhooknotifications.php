@@ -4,7 +4,7 @@ require_once '../../includes/connect_endpoint.php';
 require_once '../../includes/validate_endpoint.php';
 require_once '../../includes/ssrf_helper.php';
 
-// Variables available: {{days_until}}, {{subscription_name}}, {{subscription_price}}, {{subscription_currency}}, {{subscription_category}}, {{subscription_date}}, {{subscription_payer}}, {{subscription_days_until_payment}}, {{subscription_notes}}, {{subscription_url}}
+// Variables available: {{days_until}}, {{subscription_name}}, {{subscription_price}}, {{subscription_currency}}, {{subscription_category}}, {{subscription_date}}, {{subscription_payer}}, {{subscription_days_until_payment}}, {{subscription_notes}}, {{subscription_url}}, {{subscription_paid}}
 $fakeSubscription = [
     "days_until" => 5,
     "subscription_name" => "Test Subscription",
@@ -15,7 +15,8 @@ $fakeSubscription = [
     "subscription_payer" => "Test Payer",
     "subscription_days_until_payment" => 30,
     "subscription_notes" => "Test Notes",
-    "subscription_url" => "https://example.com/test-subscription"
+    "subscription_url" => "https://example.com/test-subscription",
+    "subscription_paid" => "false"
 ];
 
 $postData = file_get_contents("php://input");

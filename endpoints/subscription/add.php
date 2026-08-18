@@ -222,6 +222,15 @@ function resizeAndUploadLogo($uploadedFile, $uploadDir, $name, $settings)
 }
 
 $isEdit = isset($_POST['id']) && $_POST['id'] != "";
+$previousNextPayment = null;
+if ($isEdit) {
+    $prevStmt = $db->prepare("SELECT next_payment FROM subscriptions WHERE id = :id AND user_id = :userId");
+    $prevStmt->bindValue(':id', $_POST['id'], SQLITE3_INTEGER);
+    $prevStmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+    $prevResult = $prevStmt->execute();
+    $prevRow = $prevResult->fetchArray(SQLITE3_ASSOC);
+    $previousNextPayment = $prevRow ? $prevRow['next_payment'] : null;
+}
 $name = validate($_POST["name"]);
 $price = $_POST['price'];
 $currencyId = $_POST["currency_id"];
@@ -322,6 +331,11 @@ if (!$isEdit) {
                     )";
 } else {
     $id = $_POST['id'];
+    // If the due date is actually changing, the old paid_at no longer
+    // applies to the new cycle — clear it so the subscription correctly
+    // reverts to unpaid rather than isPaidThisCycle() falsely matching
+    // the recalculated window against the stale timestamp.
+    $nextPaymentChanged = $previousNextPayment !== null && $previousNextPayment !== $nextPayment;
     $sql = "UPDATE subscriptions SET 
                         name = :name, 
                         price = :price, 
@@ -341,6 +355,10 @@ if (!$isEdit) {
                         notify_days_before = :notifyDaysBefore, 
                         cancellation_date = :cancellationDate, 
                         replacement_subscription_id = :replacement_subscription_id";
+
+    if ($nextPaymentChanged) {
+        $sql .= ", paid_at = NULL";
+    }
 
     if ($logo != "") {
         $sql .= ", logo = :logo, logo_text_color = :logoTextColor, logo_variant = :logoVariant";

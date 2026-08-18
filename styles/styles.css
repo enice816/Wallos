@@ -620,6 +620,14 @@ button.mobile-action-paid {
   border-left: 3px solid var(--success-color);
 }
 
+.subscription.due-urgent {
+  border-left: 3px solid var(--error-color);
+}
+
+.subscription.due-soon {
+  border-left: 3px solid var(--warning-color);
+}
+
 .subscription-main .actions>li.mark-paid:hover {
   color: var(--success-color);
 }
@@ -2956,6 +2964,42 @@ button.dark-theme-button i {
   background-color: rgba(var(--main-color-rgb), 0.18);
 }
 
+.calendar .calendar-event.paid {
+  background-color: rgba(var(--success-color-rgb), 0.14);
+  color: var(--success-color);
+}
+
+.calendar .calendar-event.paid:hover {
+  background-color: rgba(var(--success-color-rgb), 0.22);
+}
+
+.calendar .calendar-event.due-urgent {
+  background-color: rgba(var(--error-color-rgb), 0.14);
+  color: var(--error-color);
+}
+
+.calendar .calendar-event.due-urgent:hover {
+  background-color: rgba(var(--error-color-rgb), 0.22);
+}
+
+.calendar .calendar-event.due-soon {
+  background-color: rgba(var(--warning-color-rgb), 0.16);
+  color: var(--warning-color);
+}
+
+.calendar .calendar-event.due-soon:hover {
+  background-color: rgba(var(--warning-color-rgb), 0.24);
+}
+
+.calendar .calendar-event.past {
+  background-color: rgba(var(--text-muted-rgb), 0.10);
+  color: var(--text-muted);
+}
+
+.calendar .calendar-event.past:hover {
+  background-color: rgba(var(--text-muted-rgb), 0.18);
+}
+
 @media (max-width: 768px) {
   .calendar .calendar-header .calendar-cell {
     padding: 10px 0px 8px;
@@ -3410,6 +3454,14 @@ input[type="radio"]:checked+label::after {
 
 .dashboard-subscriptions-list>.subscription-item:not(.thin) {
   cursor: pointer;
+}
+
+.dashboard-subscriptions-list>.subscription-item.due-urgent {
+  border-left: 3px solid var(--error-color);
+}
+
+.dashboard-subscriptions-list>.subscription-item.due-soon {
+  border-left: 3px solid var(--warning-color);
 }
 
 .dashboard-subscriptions-list>.subscription-item.thin {

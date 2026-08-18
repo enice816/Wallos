@@ -16,6 +16,50 @@ require __DIR__ . '/../../includes/budget_period_calculations.php';
 
 require 'settimezone.php';
 
+function getPaymentCycleDays($cycle, $frequency)
+{
+  switch ($cycle) {
+    case 1: return 1 * $frequency;
+    case 2: return 7 * $frequency;
+    case 3: return 30 * $frequency;
+    case 4: return 365 * $frequency;
+    default: return 0;
+  }
+}
+
+function isPaidThisCycle($paidAt, $cycle, $frequency, $nextPayment)
+{
+  if (!$paidAt || $cycle === 5) {
+    return false;
+  }
+
+  $paidDate = new DateTime($paidAt);
+  $nextPaymentDate = new DateTime($nextPayment);
+  $currentDate = new DateTime((new DateTime('now'))->format('Y-m-d'));
+  $paymentCycleDays = getPaymentCycleDays($cycle, $frequency);
+
+  if ($paymentCycleDays <= 0) {
+    return false;
+  }
+
+  if ($currentDate > $nextPaymentDate) {
+    // Overdue: accept paid_at from one cycle before through one cycle after
+    // next_payment, not just on/after it, so an early payment doesn't stop
+    // counting once the due date itself passes.
+    $cycleEnd = clone $nextPaymentDate;
+    $cycleEnd->modify('+' . $paymentCycleDays . ' days');
+    $cycleStart = clone $nextPaymentDate;
+    $cycleStart->modify('-' . $paymentCycleDays . ' days');
+    return $paidDate >= $cycleStart && $paidDate <= $cycleEnd;
+  }
+
+  $daysUntilNextPayment = $currentDate->diff($nextPaymentDate)->days;
+  $cyclesBack = max(1, (int) ceil($daysUntilNextPayment / $paymentCycleDays));
+  $cycleStart = clone $nextPaymentDate;
+  $cycleStart->modify('-' . ($cyclesBack * $paymentCycleDays) . ' days');
+  return $paidDate >= $cycleStart && $paidDate <= $nextPaymentDate;
+}
+
 if (php_sapi_name() == 'cli') {
     $date = new DateTime('now');
     echo "\n" . $date->format('Y-m-d') . " " . $date->format('H:i:s') . "<br />\n";
@@ -363,6 +407,7 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                 $notify[$rowSubscription['payer_user_id']][$i]['days'] = $daysToCompare;
                 $notify[$rowSubscription['payer_user_id']][$i]['url'] = $rowSubscription['url'];
                 $notify[$rowSubscription['payer_user_id']][$i]['notes'] = $rowSubscription['notes'];
+                $notify[$rowSubscription['payer_user_id']][$i]['paid'] = isPaidThisCycle($rowSubscription['paid_at'] ?? null, $rowSubscription['cycle'], $rowSubscription['frequency'], $rowSubscription['next_payment']) ? 'true' : 'false';
                 $i++;
             }
         }
@@ -885,6 +930,7 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                             $payload = str_replace("{{subscription_days_until_payment}}", $subscription['days'], $payload);
                             $payload = str_replace("{{subscription_url}}", $subscription['url'], $payload);
                             $payload = str_replace("{{subscription_notes}}", $subscription['notes'], $payload);
+                            $payload = str_replace("{{subscription_paid}}", $subscription['paid'], $payload);
                 
                             // Initialize cURL for each subscription
                             $ch = curl_init();
@@ -895,7 +941,11 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                             // Add headers if they exist
                             if (!empty($webhook['headers'])) {
                                 $customheaders = json_decode($webhook["headers"], true);
-                                curl_setopt($ch, CURLOPT_HTTPHEADER, $customheaders);
+                                if (is_array($customheaders)) {
+                                    curl_setopt($ch, CURLOPT_HTTPHEADER, $customheaders);
+                                } else {
+                                    echo "Webhook 'Custom Headers' is not a valid JSON array — ignoring headers for this request.<br />";
+                                }
                             }
                 
                             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
