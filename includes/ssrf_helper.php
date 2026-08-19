@@ -100,27 +100,55 @@ function validate_webhook_url_for_ssrf($url, $db, $i18n, $userId = null) {
     // Check if it's a private IP
     $is_private = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false || is_cgnat_ip($ip);
 
+//    if ($is_private) {
+//        if ($userId != 1) {
+//            die(json_encode([
+//                "success" => false,
+//                "message" => "Security Block: Standard users are not permitted to use internal network addresses."
+//            ]));
+//        }
+
+//        $allowlist = wallos_get_effective_ssrf_allowlist($db)['allowlist'];
+
+//        if (!in_array($urlHost, $allowlist) &&
+//            !in_array($ip, $allowlist) &&
+//            !in_array($hostWithPort, $allowlist) &&
+//            !in_array($ipWithPort, $allowlist)) {
+
+//            die(json_encode([
+//                "success" => false,
+//                "message" => "Security Block: The target IP/Port is private and not present in the Webhook Allowlist."
+//            ]));
+//        }
+//    }
+// Added to allow non admin user to send webhook to private IP
     if ($is_private) {
-        if ($userId != 1) {
+        $allowlist = wallos_get_effective_ssrf_allowlist($db)['allowlist'];
+
+        $isAllowlisted = in_array($urlHost, $allowlist) ||
+                          in_array($ip, $allowlist) ||
+                          in_array($hostWithPort, $allowlist) ||
+                          in_array($ipWithPort, $allowlist);
+
+        // Any user may reach a private address the admin has explicitly
+        // pre-approved via the allowlist. Admin (user ID 1) may also reach
+        // private addresses that AREN'T on the allowlist, matching original
+        // behavior; standard users without an allowlist match are blocked.
+        if (!$isAllowlisted && $userId != 1) {
             die(json_encode([
                 "success" => false,
                 "message" => "Security Block: Standard users are not permitted to use internal network addresses."
             ]));
         }
 
-        $allowlist = wallos_get_effective_ssrf_allowlist($db)['allowlist'];
-
-        if (!in_array($urlHost, $allowlist) &&
-            !in_array($ip, $allowlist) &&
-            !in_array($hostWithPort, $allowlist) &&
-            !in_array($ipWithPort, $allowlist)) {
-
+        if (!$isAllowlisted && $userId == 1) {
             die(json_encode([
                 "success" => false,
                 "message" => "Security Block: The target IP/Port is private and not present in the Webhook Allowlist."
             ]));
         }
     }
+
 
     // Determine the exact port being targeted for cURL DNS rebinding protection
     $targetPort = $port ?: (strtolower($parsedUrl['scheme'] ?? 'http') === 'https' ? 443 : 80);
