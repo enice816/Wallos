@@ -279,20 +279,41 @@ function is_url_safe_for_ssrf($url, $db, $userId = null) {
     $is_private = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false
                || is_cgnat_ip($ip);
 
-    if ($is_private) {
-        if ($userId != 1) {
-            return false; // private and user is not admin — skip silently
-        }
+//    if ($is_private) {
+//        if ($userId != 1) {
+//            return false; // private and user is not admin — skip silently
+//        }
 
+//        $allowlist = wallos_get_effective_ssrf_allowlist($db)['allowlist'];
+
+//        if (
+//            !in_array($urlHost, $allowlist) &&
+//            !in_array($ip, $allowlist) &&
+//            !in_array($hostWithPort, $allowlist) &&
+//            !in_array($ipWithPort, $allowlist)
+//        ) {
+//            return false; // private and not in allowlist — skip silently
+//        }
+//    }
+
+// Added to allow non Admin user to sent webhooks to an internal IP Address
+    if ($is_private) {
         $allowlist = wallos_get_effective_ssrf_allowlist($db)['allowlist'];
 
-        if (
-            !in_array($urlHost, $allowlist) &&
-            !in_array($ip, $allowlist) &&
-            !in_array($hostWithPort, $allowlist) &&
-            !in_array($ipWithPort, $allowlist)
-        ) {
-            return false; // private and not in allowlist — skip silently
+        $isAllowlisted = in_array($urlHost, $allowlist) ||
+                          in_array($ip, $allowlist) ||
+                          in_array($hostWithPort, $allowlist) ||
+                          in_array($ipWithPort, $allowlist);
+
+        // Same policy as validate_webhook_url_for_ssrf(): any user may reach
+        // an admin-allowlisted private address; admin (user ID 1) may also
+        // reach private addresses that aren't allowlisted.
+        if (!$isAllowlisted && $userId != 1) {
+            return false; // private, not allowlisted, and user is not admin
+        }
+
+        if (!$isAllowlisted && $userId == 1) {
+            return false; // private and not in allowlist, even for admin
         }
     }
 
