@@ -1,0 +1,85 @@
+name: Sync upstream (ellite/Wallos)
+
+on:
+  schedule:
+    # Runs daily at 06:00 UTC. Adjust as you like.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}  # lets you trigger it manually from the Actions tab too
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout my-customizations
+        uses: actions/checkout@v4
+        with:
+          ref: my-customizations
+          fetch-depth: 0  # full history needed for a real merge, not a shallow clone
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/ellite/Wallos.git
+
+      - name: Fetch upstream
+        run: git fetch upstream main
+
+      - name: Attempt merge
+        id: merge
+        run: |
+          if git merge --no-edit upstream/main; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push merge commit
+        if: steps.merge.outputs.clean == 'true'
+        run: git push origin my-customizations
+
+      - name: Check if anything actually changed
+        if: steps.merge.outputs.clean == 'true'
+        id: diffcheck
+        run: |
+          # Compare against the pre-merge commit to see if upstream had new commits at all
+          git log --oneline HEAD@{1}..HEAD | grep -q . && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue on successful merge with changes
+        if: steps.merge.outputs.clean == 'true' && steps.diffcheck.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Upstream merged cleanly into my-customizations`,
+              body: `A scheduled sync merged new commits from ellite/Wallos main into ` +
+                    `\`my-customizations\` with no git conflicts.\n\n` +
+                    `**This does not mean it's safe to deploy blindly** — a clean merge ` +
+                    `only means no overlapping lines changed, not that behavior is unaffected. ` +
+                    `Review the changes, test, then rebuild and push the image yourself when ready:\n\n` +
+                    "```bash\ngit pull origin my-customizations\ndocker build -t ghcr.io/enice816/wallos-custom:latest .\ndocker push ghcr.io/enice816/wallos-custom:latest\n```\n"
+            });
+
+      - name: Open issue on conflict
+        if: steps.merge.outputs.clean == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Merge conflict syncing upstream into my-customizations`,
+              body: `The scheduled sync from ellite/Wallos main hit a merge conflict ` +
+                    `and was aborted — \`my-customizations\` was left untouched.\n\n` +
+                    `Resolve manually:\n\n` +
+                    "```bash\ncd Wallos\ngit fetch upstream main   # or: git fetch ellite main, if you've added that remote name locally\ngit merge upstream/main\n# resolve conflicts, then:\ngit add -A\ngit commit\ngit push origin my-customizations\n```\n"
+            });
