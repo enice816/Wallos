@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/budget_period_calculations.php';
+require_once __DIR__ . '/currency_rates.php';
 
 function getPricePerMonth($cycle, $frequency, $price)
 {
@@ -23,19 +24,7 @@ function getPricePerMonth($cycle, $frequency, $price)
 
 function getPriceConverted($price, $currency, $database, $userId)
 {
-    $query = "SELECT rate FROM currencies WHERE id = :currency AND user_id = :userId";
-    $stmt = $database->prepare($query);
-    $stmt->bindParam(':currency', $currency, SQLITE3_INTEGER);
-    $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
-    $result = $stmt->execute();
-
-    $exchangeRate = $result->fetchArray(SQLITE3_ASSOC);
-    if ($exchangeRate === false) {
-        return $price;
-    } else {
-        $fromRate = $exchangeRate['rate'];
-        return $price / $fromRate;
-    }
+    return wallos_convert_price($price, $currency, $database, $userId);
 }
 
 // Get categories
@@ -114,6 +103,25 @@ $amountDueThisMonth = 0;
 $totalCostPerMonth = 0;
 $totalSavingsPerMonth = 0;
 $totalCostsInReplacementsPerMonth = 0;
+
+// Categories excluded from "most expensive" / "cheapest" comparisons only —
+// e.g. a revolving credit card balance shouldn't be flagged as your "most
+// expensive subscription." Everything else on this page (category totals,
+// overall monthly cost, etc.) still includes these normally.
+$statsComparisonExcludedCategoryNames = ['Credit Card'];
+$statsComparisonExcludedCategoryIds = [];
+if (!empty($statsComparisonExcludedCategoryNames)) {
+    $placeholders = implode(',', array_fill(0, count($statsComparisonExcludedCategoryNames), '?'));
+    $excludeCatStmt = $db->prepare("SELECT id FROM categories WHERE user_id = ? AND name IN ($placeholders)");
+    $excludeCatStmt->bindValue(1, $userId, SQLITE3_INTEGER);
+    foreach ($statsComparisonExcludedCategoryNames as $i => $name) {
+        $excludeCatStmt->bindValue($i + 2, $name, SQLITE3_TEXT);
+    }
+    $excludeCatResult = $excludeCatStmt->execute();
+    while ($excludeCatRow = $excludeCatResult->fetchArray(SQLITE3_ASSOC)) {
+        $statsComparisonExcludedCategoryIds[] = (int) $excludeCatRow['id'];
+    }
+}
 
 $statsSubtitleParts = [];
 $query = "SELECT name, price, logo, logo_text_color, logo_variant, frequency, cycle, currency_id, next_payment, payer_user_id, category_id, payment_method_id, inactive, replacement_subscription_id, start_date, auto_renew FROM subscriptions";
@@ -205,7 +213,7 @@ if ($result) {
                 $totalCostPerMonth += $price;
                 $memberCost[$payerId]['cost'] += $price;
                 $categoryCost[$categoryId]['cost'] += $price;
-                if ($price > $mostExpensiveSubscription['price']) {
+                if ($price > $mostExpensiveSubscription['price'] && !in_array($categoryId, $statsComparisonExcludedCategoryIds, true)) {
                     $mostExpensiveSubscription['price'] = $price;
                     $mostExpensiveSubscription['name'] = $name;
                     $mostExpensiveSubscription['logo'] = $logo;
