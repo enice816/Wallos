@@ -79,7 +79,8 @@ if (isset($subscriptions)) {
         if ($cycle !== 5) {
             $activeMonthlyPrices[] = $monthlyPrice;
 
-            if ($cheapestSubscription === null || $monthlyPrice < $cheapestSubscription['price']) {
+            if (($cheapestSubscription === null || $monthlyPrice < $cheapestSubscription['price'])
+                && !in_array((int) $subscription['category_id'], $statsComparisonExcludedCategoryIds ?? [], true)) {
                 $cheapestSubscription = [
                     'price' => $monthlyPrice,
                     'name' => $subscription['name'],
