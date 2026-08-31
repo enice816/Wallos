@@ -1,12 +1,21 @@
 <?php
-// Adds a paid_at column to track when a subscription was last marked as paid.
-// When paid_at falls within the current billing cycle, the subscription is
-// considered paid for that cycle. It auto-resets naturally when the cronjob
-// advances next_payment — no explicit clearing needed.
 
-$columnQuery = $db->query("SELECT * FROM pragma_table_info('subscriptions') where name='paid_at'");
-$columnRequired = $columnQuery->fetchArray(SQLITE3_ASSOC) === false;
+// This migration adds brute-force protection state to the "totp" table.
+// It adds a "failed_attempts" column (consecutive failed 2FA verifications)
+// and a "lockout_until" column (unix timestamp until which verification is
+// blocked). Both are keyed per account so the lockout survives session resets.
 
-if ($columnRequired) {
-    $db->exec("ALTER TABLE subscriptions ADD COLUMN paid_at TEXT DEFAULT NULL");
+$failedAttemptsColumn = $db->query("SELECT * FROM pragma_table_info('totp') WHERE name='failed_attempts'");
+if ($failedAttemptsColumn->fetchArray(SQLITE3_ASSOC) === false) {
+    $db->exec('ALTER TABLE totp ADD COLUMN failed_attempts INTEGER DEFAULT 0');
 }
+
+$lockoutUntilColumn = $db->query("SELECT * FROM pragma_table_info('totp') WHERE name='lockout_until'");
+if ($lockoutUntilColumn->fetchArray(SQLITE3_ASSOC) === false) {
+    $db->exec('ALTER TABLE totp ADD COLUMN lockout_until INTEGER DEFAULT 0');
+}
+
+$db->exec('UPDATE totp SET failed_attempts = 0 WHERE failed_attempts IS NULL');
+$db->exec('UPDATE totp SET lockout_until = 0 WHERE lockout_until IS NULL');
+
+?>
