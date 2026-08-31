@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/currency_rates.php';
+
 if (!function_exists('sanitizeBudgetPeriodType')) {
     function sanitizeBudgetPeriodType($periodType)
     {
@@ -256,30 +258,45 @@ if (!function_exists('getSubscriptionOccurrencesInRange')) {
 if (!function_exists('convertPriceToMainCurrency')) {
     function convertPriceToMainCurrency($price, $currencyId, SQLite3 $database, $userId)
     {
-        $query = "SELECT rate FROM currencies WHERE id = :currencyId AND user_id = :userId";
-        $stmt = $database->prepare($query);
-        $stmt->bindValue(':currencyId', $currencyId, SQLITE3_INTEGER);
-        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
-        $result = $stmt->execute();
-        $exchangeRate = $result ? $result->fetchArray(SQLITE3_ASSOC) : false;
-
-        if ($exchangeRate === false || empty($exchangeRate['rate'])) {
-            return (float) $price;
-        }
-
-        return (float) $price / (float) $exchangeRate['rate'];
+        return wallos_convert_price($price, $currencyId, $database, $userId);
     }
 }
 
 if (!function_exists('computeAmountNeededInPeriod')) {
     function computeAmountNeededInPeriod(array $subscriptions, DateTime $today, DateTime $periodEnd, SQLite3 $database, $userId)
     {
+        // Category names excluded from budget totals — e.g. revolving credit
+        // card balances synced in from an external source (like a Plaid
+        // balance-sync script) shouldn't count as new "spending" against a
+        // monthly budget the way an actual subscription cost does.
+        $excludedCategoryNames = ['Credit Card'];
+
+        $excludedCategoryIds = [];
+        if (!empty($excludedCategoryNames)) {
+            $placeholders = implode(',', array_fill(0, count($excludedCategoryNames), '?'));
+            $catStmt = $database->prepare(
+                "SELECT id FROM categories WHERE user_id = ? AND name IN ($placeholders)"
+            );
+            $catStmt->bindValue(1, $userId, SQLITE3_INTEGER);
+            foreach ($excludedCategoryNames as $i => $name) {
+                $catStmt->bindValue($i + 2, $name, SQLITE3_TEXT);
+            }
+            $catResult = $catStmt->execute();
+            while ($catRow = $catResult->fetchArray(SQLITE3_ASSOC)) {
+                $excludedCategoryIds[] = (int) $catRow['id'];
+            }
+        }
+
         $rangeStart = createDateAtMidnight($today);
         $amountNeeded = 0.0;
 
         foreach ($subscriptions as $subscription) {
             $isActive = isset($subscription['inactive']) && (int) $subscription['inactive'] === 0;
             if (!$isActive) {
+                continue;
+            }
+
+            if (isset($subscription['category_id']) && in_array((int) $subscription['category_id'], $excludedCategoryIds, true)) {
                 continue;
             }
 
