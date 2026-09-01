@@ -95,8 +95,9 @@ if (isset($subscriptions)) {
             }
 
             // Projection: walk renewals forward into the buckets
+            $isExcludedFromProjection = in_array((int) $subscription['category_id'], $statsComparisonExcludedCategoryIds ?? [], true);
             $paymentTimestamp = strtotime($subscription['next_payment'] ?? '');
-            if ($paymentTimestamp !== false && isset($cycleStepUnits[$cycle])) {
+            if (!$isExcludedFromProjection && $paymentTimestamp !== false && isset($cycleStepUnits[$cycle])) {
                 $paymentDate = (new DateTime())->setTimestamp($paymentTimestamp);
                 $safety = 0;
                 while ($paymentDate < $projectionEnd && $safety < 1000) {
