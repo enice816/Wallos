@@ -1,6 +1,5 @@
 <?php
 require_once 'includes/header.php';
-require_once 'includes/currency_rates.php';
 
 function getPaymentCycleDays($cycle, $frequency)
 {
@@ -50,7 +49,19 @@ function isPaidThisCycle($paidAt, $cycle, $frequency, $nextPayment)
 
 function getPriceConverted($price, $currency, $database, $userId)
 {
-  return wallos_convert_price($price, $currency, $database, $userId);
+  $query = "SELECT rate FROM currencies WHERE id = :currency AND user_id = :userId";
+  $stmt = $database->prepare($query);
+  $stmt->bindParam(':currency', $currency, SQLITE3_INTEGER);
+  $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
+  $result = $stmt->execute();
+
+  $exchangeRate = $result->fetchArray(SQLITE3_ASSOC);
+  if ($exchangeRate === false) {
+    return $price;
+  } else {
+    $fromRate = $exchangeRate['rate'];
+    return $price / $fromRate;
+  }
 }
 
 // Get budget from user table
@@ -225,13 +236,34 @@ if ($weekStartsSunday) {
     $startOfMonth = strtotime($monthKey . '-01');
     $paymentsByDay = [];
 
-    $registerPayment = function ($date, $subscription) use (&$paymentsByDay, &$totalCostThisMonth, &$numberOfSubscriptionsToPayThisMonth, &$amountDueThisMonth, $today, $db, $userId) {
+    $calendarExcludedCategoryNames = ['Credit Card'];
+    $calendarExcludedCategoryIds = [];
+    if (!empty($calendarExcludedCategoryNames)) {
+        $placeholders = implode(',', array_fill(0, count($calendarExcludedCategoryNames), '?'));
+        $excludeCatStmt = $db->prepare("SELECT id FROM categories WHERE user_id = ? AND name IN ($placeholders)");
+        $excludeCatStmt->bindValue(1, $userId, SQLITE3_INTEGER);
+        foreach ($calendarExcludedCategoryNames as $i => $name) {
+            $excludeCatStmt->bindValue($i + 2, $name, SQLITE3_TEXT);
+        }
+        $excludeCatResult = $excludeCatStmt->execute();
+        while ($excludeCatRow = $excludeCatResult->fetchArray(SQLITE3_ASSOC)) {
+            $calendarExcludedCategoryIds[] = (int) $excludeCatRow['id'];
+        }
+    }
+
+    $registerPayment = function ($date, $subscription) use (&$paymentsByDay, &$totalCostThisMonth, &$numberOfSubscriptionsToPayThisMonth, &$amountDueThisMonth, $today, $db, $userId, $calendarExcludedCategoryIds) {
       $paymentsByDay[(int) date('j', $date)][] = $subscription;
+
+      $isExcludedFromBudget = isset($subscription['category_id']) && in_array((int) $subscription['category_id'], $calendarExcludedCategoryIds, true);
+
       $convertedPrice = getPriceConverted($subscription['price'], $subscription['currency_id'], $db, $userId);
-      $totalCostThisMonth += $convertedPrice;
       $numberOfSubscriptionsToPayThisMonth++;
-      if ($date >= $today) {
-        $amountDueThisMonth += $convertedPrice;
+
+      if (!$isExcludedFromBudget) {
+        $totalCostThisMonth += $convertedPrice;
+        if ($date >= $today) {
+          $amountDueThisMonth += $convertedPrice;
+        }
       }
     };
 

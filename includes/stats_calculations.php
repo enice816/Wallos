@@ -210,7 +210,9 @@ if ($result) {
                     $activeSubscriptions++;
                     $paymentMethodsCount[$paymentMethodId]['count'] += 1;
                 }
-                $totalCostPerMonth += $price;
+                if (!in_array($categoryId, $statsComparisonExcludedCategoryIds, true)) {
+                    $totalCostPerMonth += $price;
+                }
                 $memberCost[$payerId]['cost'] += $price;
                 $categoryCost[$categoryId]['cost'] += $price;
                 if ($price > $mostExpensiveSubscription['price'] && !in_array($categoryId, $statsComparisonExcludedCategoryIds, true)) {
