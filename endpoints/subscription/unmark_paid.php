@@ -38,11 +38,25 @@ if ($updateStmt->execute()) {
     // distinguished by the "event" field in the payload.
     $markPaidWebhookUrl = getenv('WALLOS_MARK_PAID_WEBHOOK_URL');
     if (!empty($markPaidWebhookUrl)) {
+        $categoryStmt = $db->prepare("SELECT name FROM categories WHERE id = :id");
+        $categoryStmt->bindValue(':id', $subscription['category_id'], SQLITE3_INTEGER);
+        $categoryRow = $categoryStmt->execute()->fetchArray(SQLITE3_ASSOC);
+        $categoryName = $categoryRow ? $categoryRow['name'] : '';
+
+        $payerStmt = $db->prepare("SELECT name FROM household WHERE id = :id");
+        $payerStmt->bindValue(':id', $subscription['payer_user_id'], SQLITE3_INTEGER);
+        $payerRow = $payerStmt->execute()->fetchArray(SQLITE3_ASSOC);
+        $payerName = $payerRow ? $payerRow['name'] : '';
+
         $webhookPayload = json_encode([
             "event" => "wallos_unmark_paid",
             "id" => $subscriptionId,
-            "name" => $subscription['name'],
-            "date" => $subscription['next_payment']
+            "name" => html_entity_decode($subscription['name'], ENT_QUOTES, 'UTF-8'),
+            "date" => $subscription['next_payment'],
+            "price" => $subscription['price'],
+            "category" => $categoryName,
+            "user" => $payerName,
+            "url" => $subscription['url']
         ]);
 
         $ch = curl_init($markPaidWebhookUrl);
