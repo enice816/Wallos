@@ -50,8 +50,10 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
         $nextPaymentDate->add($interval);
     }
 
-    // Update the subscription's next_payment date
-    $updateQuery = "UPDATE subscriptions SET next_payment = :nextPaymentDate WHERE id = :subscriptionId";
+    // Update the subscription's next_payment date and reset paid status
+    // for the new cycle, since a payment made for the previous due date
+    // should not carry forward and be mistaken for having paid the new one.
+    $updateQuery = "UPDATE subscriptions SET next_payment = :nextPaymentDate, paid_at = NULL WHERE id = :subscriptionId";
     $updateStmt = $db->prepare($updateQuery);
     $updateStmt->bindValue(':nextPaymentDate', $nextPaymentDate->format('Y-m-d'));
     $updateStmt->bindValue(':subscriptionId', $subscriptionId);
